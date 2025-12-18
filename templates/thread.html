@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }} - Messenger Archive</title>
+    <style>
+        :root {
+            --bg-primary: #0a0a0a;
+            --bg-secondary: #1a1a1a;
+            --bg-message-self: #0084ff;
+            --bg-message-other: #303030;
+            --text-primary: #ffffff;
+            --text-secondary: #b0b0b0;
+            --border-color: #333;
+            --accent: #0084ff;
+        }
+
+        /* Light mode support */
+        @media (prefers-color-scheme: light) {
+            :root {
+                --bg-primary: #f5f5f5;
+                --bg-secondary: #ffffff;
+                --bg-message-self: #0084ff;
+                --bg-message-other: #e4e6eb;
+                --text-primary: #1c1e21;
+                --text-secondary: #65676b;
+                --border-color: #ddd;
+            }
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.5;
+        }
+
+        .container { max-width: 900px; margin: 0 auto; padding: 20px; }
+
+        .header {
+            background: var(--bg-secondary);
+            padding: 30px;
+            border-radius: 12px;
+            margin-bottom: 30px;
+            border: 1px solid var(--border-color);
+        }
+
+        .header h1 {
+            font-size: 1.8em;
+            margin-bottom: 15px;
+            background: linear-gradient(135deg, var(--accent), #00c6ff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .header .meta { color: var(--text-secondary); font-size: 0.9em; }
+        .header .meta span { margin-right: 20px; }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        .stat-card {
+            background: var(--bg-primary);
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .stat-card .value {
+            font-size: 1.5em;
+            font-weight: bold;
+            color: var(--accent);
+        }
+
+        .stat-card .label {
+            font-size: 0.8em;
+            color: var(--text-secondary);
+        }
+
+        .messages { display: flex; flex-direction: column; gap: 8px; }
+
+        .message {
+            max-width: 75%;
+            padding: 12px 16px;
+            border-radius: 18px;
+            position: relative;
+            animation: fadeIn 0.3s ease-out;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .message.self {
+            background: var(--bg-message-self);
+            align-self: flex-end;
+            border-bottom-right-radius: 4px;
+        }
+
+        .message.other {
+            background: var(--bg-message-other);
+            align-self: flex-start;
+            border-bottom-left-radius: 4px;
+        }
+
+        .message .sender {
+            font-size: 0.75em;
+            color: var(--text-secondary);
+            margin-bottom: 4px;
+            font-weight: 600;
+        }
+
+        .message.self .sender { color: rgba(255,255,255,0.7); }
+        .message .content { word-wrap: break-word; white-space: pre-wrap; }
+
+        .message .time {
+            font-size: 0.7em;
+            color: var(--text-secondary);
+            margin-top: 6px;
+            text-align: right;
+        }
+
+        .message.self .time { color: rgba(255,255,255,0.6); }
+
+        .message .attachments {
+            font-size: 0.8em;
+            color: var(--accent);
+            margin-top: 8px;
+            padding-top: 8px;
+            border-top: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .message .reactions {
+            font-size: 0.8em;
+            margin-top: 4px;
+        }
+
+        .date-divider {
+            text-align: center;
+            color: var(--text-secondary);
+            font-size: 0.85em;
+            margin: 20px 0;
+            position: relative;
+        }
+
+        .date-divider::before, .date-divider::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            width: 30%;
+            height: 1px;
+            background: var(--border-color);
+        }
+
+        .date-divider::before { left: 0; }
+        .date-divider::after { right: 0; }
+
+        .search-box {
+            position: sticky;
+            top: 10px;
+            background: var(--bg-secondary);
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            z-index: 100;
+            display: flex;
+            gap: 10px;
+        }
+
+        .search-box input {
+            flex: 1;
+            padding: 10px 15px;
+            border: 1px solid var(--border-color);
+            border-radius: 20px;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            font-size: 1em;
+        }
+
+        .search-box input:focus { outline: none; border-color: var(--accent); }
+
+        .search-box button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 20px;
+            background: var(--accent);
+            color: white;
+            cursor: pointer;
+            font-weight: 600;
+        }
+
+        .search-box button:hover { opacity: 0.9; }
+
+        .highlight { background: yellow; color: black; padding: 0 2px; border-radius: 2px; }
+        .collapsed { display: none; }
+
+        .jump-to-top {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            background: var(--accent);
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-size: 1.5em;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        .jump-to-top.visible { opacity: 1; }
+
+        footer {
+            text-align: center;
+            padding: 30px;
+            color: var(--text-secondary);
+            font-size: 0.85em;
+        }
+
+        footer a { color: var(--accent); text-decoration: none; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>{{ title }}</h1>
+            <div class="meta">
+                <span><strong>Participants:</strong> {{ participants | join(', ') }}</span>
+            </div>
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="value">{{ "{:,}".format(message_count) }}</div>
+                    <div class="label">Messages</div>
+                </div>
+                <div class="stat-card">
+                    <div class="value">{{ participants | length }}</div>
+                    <div class="label">Participants</div>
+                </div>
+                <div class="stat-card">
+                    <div class="value">{{ date_range.split(' to ')[0] if ' to ' in date_range else 'N/A' }}</div>
+                    <div class="label">First Message</div>
+                </div>
+                <div class="stat-card">
+                    <div class="value">{{ date_range.split(' to ')[1] if ' to ' in date_range else 'N/A' }}</div>
+                    <div class="label">Last Message</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="search-box">
+            <input type="text" id="search" placeholder="Search messages..." onkeyup="searchMessages()">
+            <button onclick="clearSearch()">Clear</button>
+        </div>
+
+        <div class="messages" id="messages">
+            {% set last_date = namespace(value='') %}
+            {% for msg in messages %}
+                {% if msg.date != last_date.value %}
+                    <div class="date-divider">{{ msg.date }}</div>
+                    {% set last_date.value = msg.date %}
+                {% endif %}
+
+                <div class="message {{ 'self' if msg.is_self else 'other' }}">
+                    {% if not msg.is_self %}
+                        <div class="sender">{{ msg.sender }}</div>
+                    {% endif %}
+                    <div class="content">{{ msg.content_escaped | safe if msg.content_escaped else '<em>(no text)</em>' | safe }}</div>
+                    {% if msg.attachments %}
+                        <div class="attachments">{{ msg.attachments }}</div>
+                    {% endif %}
+                    {% if msg.reactions %}
+                        <div class="reactions">{{ msg.reactions }}</div>
+                    {% endif %}
+                    <div class="time">{{ msg.time }}</div>
+                </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <button class="jump-to-top" id="jumpTop" onclick="scrollToTop()">↑</button>
+
+    <footer>
+        <p>Generated by <a href="https://github.com/your-repo/messenger-cleaner">Messenger Cleaner</a></p>
+        <p>{{ message_count }} messages from {{ date_range }}</p>
+    </footer>
+
+    <script>
+        // Search functionality
+        function searchMessages() {
+            const query = document.getElementById('search').value.toLowerCase();
+            const messages = document.querySelectorAll('.message');
+
+            messages.forEach(msg => {
+                const content = msg.textContent.toLowerCase();
+                if (query === '' || content.includes(query)) {
+                    msg.classList.remove('collapsed');
+                    if (query) {
+                        const contentEl = msg.querySelector('.content');
+                        const original = contentEl.getAttribute('data-original') || contentEl.innerHTML;
+                        contentEl.setAttribute('data-original', original);
+                        const regex = new RegExp('(' + query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
+                        contentEl.innerHTML = original.replace(regex, '<span class="highlight">$1</span>');
+                    }
+                } else {
+                    msg.classList.add('collapsed');
+                }
+            });
+        }
+
+        function clearSearch() {
+            document.getElementById('search').value = '';
+            const messages = document.querySelectorAll('.message');
+            messages.forEach(msg => {
+                msg.classList.remove('collapsed');
+                const contentEl = msg.querySelector('.content');
+                const original = contentEl.getAttribute('data-original');
+                if (original) contentEl.innerHTML = original;
+            });
+        }
+
+        // Jump to top button
+        function scrollToTop() {
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        window.addEventListener('scroll', () => {
+            const btn = document.getElementById('jumpTop');
+            if (window.scrollY > 500) {
+                btn.classList.add('visible');
+            } else {
+                btn.classList.remove('visible');
+            }
+        });
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', (e) => {
+            if (e.key === '/' && !e.ctrlKey && !e.metaKey) {
+                e.preventDefault();
+                document.getElementById('search').focus();
+            }
+            if (e.key === 'Escape') {
+                clearSearch();
+                document.getElementById('search').blur();
+            }
+        });
+    </script>
+</body>
+</html>

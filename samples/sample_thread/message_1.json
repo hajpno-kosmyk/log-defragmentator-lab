@@ -1,0 +1,45 @@
+{
+  "participants": [
+    {"name": "Jan Kowalski"},
+    {"name": "Anna Nowak"}
+  ],
+  "title": "Sample Conversation",
+  "messages": [
+    {
+      "sender_name": "Jan Kowalski",
+      "timestamp_ms": 1702800000000,
+      "content": "Cześć Anna! Jak się masz?",
+      "reactions": [
+        {"reaction": "\u2764\ufe0f", "actor": "Anna Nowak"}
+      ]
+    },
+    {
+      "sender_name": "Anna Nowak",
+      "timestamp_ms": 1702800060000,
+      "content": "Hej Jan! Świetnie, dziękuję! A Ty?"
+    },
+    {
+      "sender_name": "Jan Kowalski",
+      "timestamp_ms": 1702800120000,
+      "content": "Też dobrze! Pamiętasz nasze wakacje w Krakowie?",
+      "photos": [
+        {"uri": "photos/12345_vacation.jpg"}
+      ]
+    },
+    {
+      "sender_name": "Anna Nowak",
+      "timestamp_ms": 1702800180000,
+      "content": "Oczywiście! To były wspaniałe wspomnienia 😊"
+    },
+    {
+      "sender_name": "Jan Kowalski",
+      "timestamp_ms": 1702800240000,
+      "content": "Musimy to powtórzyć! Co powiesz na przyszły miesiąc?"
+    },
+    {
+      "sender_name": "Anna Nowak",
+      "timestamp_ms": 1702800300000,
+      "content": "Świetny pomysł! Sprawdzę kalendarz i dam znać."
+    }
+  ]
+}
