@@ -334,15 +334,21 @@ def summarize_attachments(msg: dict) -> tuple[str, list[dict]]:
 
 
 def parse_message(msg: dict) -> Optional[CleanMessage]:
+    if not isinstance(msg, dict):
+        return None
+
     # Handle both standard format (timestamp_ms) and alternate format (timestamp)
     ts_ms = msg.get("timestamp_ms")
     if ts_ms is None:
         ts_ms = msg.get("timestamp")  # Alternate format uses "timestamp"
+
     if ts_ms is None:
         return None
+
     try:
-        ts_ms_int = int(ts_ms)
-    except Exception:
+        # Handle string timestamps or floats
+        ts_ms_int = int(float(ts_ms))
+    except (ValueError, TypeError):
         return None
 
     # Handle both standard format (sender_name) and alternate format (senderName)
@@ -406,9 +412,14 @@ def stream_json_messages(file_path: Path) -> Iterable[dict]:
     """
     if not IJSON_AVAILABLE:
         # Fallback: load entire file
-        data = json.loads(file_path.read_text(encoding="utf-8"))
-        if isinstance(data, dict):
-            yield from (data.get("messages") or [])
+        try:
+            data, _ = load_json_with_fixes(file_path)
+            if isinstance(data, dict):
+                msgs = data.get("messages")
+                if isinstance(msgs, list):
+                    yield from msgs
+        except Exception:
+            pass
         return
 
     # Use ijson for streaming
@@ -420,9 +431,14 @@ def stream_json_messages(file_path: Path) -> Iterable[dict]:
     except Exception as e:
         logger.debug(f"Streaming parse failed for {file_path}: {e}, falling back to standard load")
         # Fallback on error
-        data = json.loads(file_path.read_text(encoding="utf-8"))
-        if isinstance(data, dict):
-            yield from (data.get("messages") or [])
+        try:
+            data, _ = load_json_with_fixes(file_path)
+            if isinstance(data, dict):
+                msgs = data.get("messages")
+                if isinstance(msgs, list):
+                    yield from msgs
+        except Exception:
+            pass
 
 
 def load_thread_streaming(thread_dir: Path, size_threshold_mb: float = 50.0) -> tuple[str, list[str], list[CleanMessage]]:
@@ -455,23 +471,26 @@ def load_thread_streaming(thread_dir: Path, size_threshold_mb: float = 50.0) -> 
 
             # For streaming, we need to extract metadata separately
             # Quick peek at the start for title/participants
-            with open(fp, 'rb') as f:
-                parser = ijson.parse(f)
-                for prefix, event, value in parser:
-                    if prefix == 'title' and event == 'string':
-                        title = clean_text(value) or title
-                    elif prefix == 'participants.item.name' and event == 'string':
-                        name = clean_text(value)
-                        if name:
-                            participants_set.add(name)
-                    elif prefix == 'participants.item' and event == 'string':
-                        # Handle string participant format
-                        name = clean_text(value)
-                        if name:
-                            participants_set.add(name)
-                    # Stop once we hit messages
-                    elif prefix == 'messages':
-                        break
+            try:
+                with open(fp, 'rb') as f:
+                    parser = ijson.parse(f)
+                    for prefix, event, value in parser:
+                        if prefix == 'title' and event == 'string':
+                            title = clean_text(value) or title
+                        elif prefix == 'participants.item.name' and event == 'string':
+                            name = clean_text(value)
+                            if name:
+                                participants_set.add(name)
+                        elif prefix == 'participants.item' and event == 'string':
+                            # Handle string participant format
+                            name = clean_text(value)
+                            if name:
+                                participants_set.add(name)
+                        # Stop once we hit messages
+                        elif prefix == 'messages':
+                            break
+            except Exception as e:
+                logger.debug(f"Streaming metadata parse failed for {fp.name}: {e}")
 
             # Now stream messages
             for msg in stream_json_messages(fp):
@@ -481,28 +500,34 @@ def load_thread_streaming(thread_dir: Path, size_threshold_mb: float = 50.0) -> 
         else:
             # Standard loading for smaller files
             try:
-                data = json.loads(fp.read_text(encoding="utf-8"))
-            except UnicodeDecodeError:
-                data = json.loads(fp.read_text(encoding="latin-1"))
+                data, fixes = load_json_with_fixes(fp)
+                if fixes:
+                    logger.debug(f"Auto-fixed {fp.name}: {', '.join(fixes)}")
+            except Exception as e:
+                logger.debug(f"Skipping malformed file {fp.name}: {e}")
+                continue
 
             if isinstance(data, dict):
                 title = clean_text(_safe_str(data.get("title"))) or title
-                participants = data.get("participants") or []
-                for p in participants:
-                    if isinstance(p, str):
-                        name = clean_text(p)
-                    elif isinstance(p, dict):
-                        name = clean_text(_safe_str(p.get("name")))
-                    else:
-                        name = ""
-                    if name:
-                        participants_set.add(name)
 
-                messages = data.get("messages") or []
-                for m in messages:
-                    cm = parse_message(m)
-                    if cm:
-                        all_messages.append(cm)
+                participants = data.get("participants")
+                if participants and isinstance(participants, list):
+                    for p in participants:
+                        if isinstance(p, str):
+                            name = clean_text(p)
+                        elif isinstance(p, dict):
+                            name = clean_text(_safe_str(p.get("name")))
+                        else:
+                            name = ""
+                        if name:
+                            participants_set.add(name)
+
+                messages = data.get("messages")
+                if messages and isinstance(messages, list):
+                    for m in messages:
+                        cm = parse_message(m)
+                        if cm:
+                            all_messages.append(cm)
 
     all_messages.sort(key=lambda x: x.timestamp_ms)
     participants_list = sorted(participants_set)
@@ -526,33 +551,38 @@ def load_thread(thread_dir: Path) -> tuple[str, list[str], list[CleanMessage]]:
 
     for fp in json_files:
         try:
-            data = json.loads(fp.read_text(encoding="utf-8"))
-        except UnicodeDecodeError:
-            # Some exports are UTF-8 with weirdness; try latin-1 fallback (rare)
-            data = json.loads(fp.read_text(encoding="latin-1"))
+            data, fixes = load_json_with_fixes(fp)
+            if fixes:
+                logger.debug(f"Auto-fixed {fp.name}: {', '.join(fixes)}")
+        except Exception as e:
+            logger.debug(f"Skipping malformed file {fp.name}: {e}")
+            continue
 
         if isinstance(data, dict):
             title = clean_text(_safe_str(data.get("title"))) or title
 
-            participants = data.get("participants") or []
-            for p in participants:
-                # Handle both formats: string or dict with "name" key
-                if isinstance(p, str):
-                    name = clean_text(p)
-                elif isinstance(p, dict):
-                    name = clean_text(_safe_str(p.get("name")))
-                else:
-                    name = ""
-                if name:
-                    participants_set.add(name)
+            participants = data.get("participants")
+            if participants and isinstance(participants, list):
+                for p in participants:
+                    # Handle both formats: string or dict with "name" key
+                    if isinstance(p, str):
+                        name = clean_text(p)
+                    elif isinstance(p, dict):
+                        name = clean_text(_safe_str(p.get("name")))
+                    else:
+                        name = ""
+                    if name:
+                        participants_set.add(name)
 
-            messages = data.get("messages") or []
-            for m in messages:
-                cm = parse_message(m)
-                if cm:
-                    all_messages.append(cm)
+            messages = data.get("messages")
+            if messages and isinstance(messages, list):
+                for m in messages:
+                    cm = parse_message(m)
+                    if cm:
+                        all_messages.append(cm)
         else:
             # Unexpected structure
+            logger.debug(f"Skipping {fp.name}: not a dictionary")
             continue
 
     # Messenger exports usually list messages newest->oldest; we want oldest->newest
@@ -845,24 +875,26 @@ def load_standalone_json(json_file: Path) -> tuple[str, list[str], list[CleanMes
     title = clean_text(_safe_str(data.get("title") or data.get("threadName"))) or json_file.stem.rsplit("_", 1)[0]
 
     participants_set = set()
-    participants = data.get("participants") or []
-    for p in participants:
-        # Handle both formats: string or dict with "name" key
-        if isinstance(p, str):
-            name = clean_text(p)
-        elif isinstance(p, dict):
-            name = clean_text(_safe_str(p.get("name")))
-        else:
-            name = ""
-        if name:
-            participants_set.add(name)
+    participants = data.get("participants")
+    if participants and isinstance(participants, list):
+        for p in participants:
+            # Handle both formats: string or dict with "name" key
+            if isinstance(p, str):
+                name = clean_text(p)
+            elif isinstance(p, dict):
+                name = clean_text(_safe_str(p.get("name")))
+            else:
+                name = ""
+            if name:
+                participants_set.add(name)
 
     all_messages = []
-    messages = data.get("messages") or []
-    for m in messages:
-        cm = parse_message(m)
-        if cm:
-            all_messages.append(cm)
+    messages = data.get("messages")
+    if messages and isinstance(messages, list):
+        for m in messages:
+            cm = parse_message(m)
+            if cm:
+                all_messages.append(cm)
 
     all_messages.sort(key=lambda x: x.timestamp_ms)
     participants_list = sorted(participants_set)
@@ -935,12 +967,24 @@ def load_json_with_fixes(file_path: Path) -> tuple[dict, list[str]]:
     Returns:
         tuple: (parsed_data, list_of_fixes_applied)
     """
-    content = file_path.read_text(encoding="utf-8")
     fixes = []
+    try:
+        content = file_path.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        # If UTF-8 fails, try latin-1 immediately as fallback
+        try:
+            content = file_path.read_text(encoding="latin-1")
+            fixes.append("Used latin-1 encoding")
+        except Exception:
+            # If that fails too, re-raise original error or let it fail
+            raise
+
+    if not content.strip():
+        raise ValueError("File is empty")
 
     # First try normal parsing
     try:
-        return json.loads(content), []
+        return json.loads(content), fixes
     except json.JSONDecodeError as e:
         logger.debug(f"JSON parse error in {file_path}: {e}")
 
@@ -955,12 +999,8 @@ def load_json_with_fixes(file_path: Path) -> tuple[dict, list[str]]:
         except json.JSONDecodeError:
             pass
 
-    # Last resort: try latin-1 encoding
-    try:
-        content = file_path.read_text(encoding="latin-1")
-        return json.loads(content), ["Used latin-1 encoding"]
-    except (json.JSONDecodeError, UnicodeDecodeError):
-        raise
+    # If all fixes failed, raise the original error (or last error)
+    raise ValueError(f"Failed to parse JSON in {file_path}")
 
 
 # =============================================================================
